@@ -43,6 +43,14 @@ function os2web_acadre_esdh_mm_get_import_list() {
    * We will enumerate the list with the publication-id as parsed from the filename.
    */
 
+  /*
+   * Protecting XML files in the import folder.
+   */
+  _os2web_acadre_esdh_mm_ensure_htaccess();
+
+  // Clearing variable with processed XML files
+  variable_set('os2web_acadre_esdh_mm_processed_files_folders', array());
+
   // Debug bit set in os2web_esdh_provider settings.
   $debug = variable_get('os2web_esdh_provider_debug_info');
 
@@ -79,8 +87,14 @@ function os2web_acadre_esdh_mm_get_import_list() {
  *   List of meeting_structures to save
  */
 function os2web_acadre_esdh_mm_import_meeting($meeting) {
+  $meetings_path = variable_get('os2web_meetings_path', ACADRE_MM_IMPORT_DIR);
+
   // Debug bit set in os2web_esdh_provider settings.
   $debug = variable_get('os2web_esdh_provider_debug_info');
+
+  // We store processed XML files and files folder for removal and
+  // cleanup after import.
+  $processed = array();
 
   $file = $meeting['uri'];
   if ($file === FALSE) {
@@ -88,6 +102,7 @@ function os2web_acadre_esdh_mm_import_meeting($meeting) {
   }
   $meetings = array();
   if (is_file(drupal_realpath($file))) {
+    $processed['files'][] = $file;
     $manifest = simplexml_load_file(drupal_realpath($file));
     if (is_object($manifest)) {
       $agenda_id = (int) array_shift($manifest->xpath("/root/table[@name='agenda']/fields/field/@sysid"));
@@ -105,8 +120,18 @@ function os2web_acadre_esdh_mm_import_meeting($meeting) {
           'filesfolder' => (string) array_shift($xml_item->xpath('field/@filesfolder')),
           'xmlfilename' => (string) array_shift($xml_item->xpath('field/@xmlfilename')),
           'docfilename' => (string) array_shift($xml_item->xpath('field/@docfilename')),
+          'docid' => (string) array_shift($xml_item->xpath('field/@docID')),
           'type' => (int) array_shift($xml_item->xpath('field/@type')),
         );
+
+        // Adding files folder to cleanup
+        // We manually assemble the files folder, because it's some times
+        // missing in the agenda XML file - even if it exists on the server.
+        $doc_folder = $meetings_path . '/Files_' . $agenda_id . '_' . $agendainfo['docid'];
+        if (file_exists($doc_folder)) {
+          $processed['folders'][] = $doc_folder;
+          $processed['files'][] = $doc_folder . '/' . $agendainfo['xmlfilename'];
+        }
 
         if ($agendainfo['publish'] === 1 && 
             ($agendainfo['access'] !== 'Lukket' ||
@@ -152,6 +177,12 @@ function os2web_acadre_esdh_mm_import_meeting($meeting) {
       watchdog('acadre MM', 'Failed to parse XML in %file during import.', array('%file' => $file), WATCHDOG_WARNING);
     }
   }
+
+  // Storing the processes XML files and files folders for removal
+  // and cleanup.
+  $tmp = variable_get('os2web_acadre_esdh_mm_processed_files_folders', array());
+  variable_set('os2web_acadre_esdh_mm_processed_files_folders', array_merge($tmp, $processed));
+
   return $meetings;
 }
 
@@ -199,20 +230,25 @@ function _os2web_acadre_esdh_import_meeting($info) {
     date_timezone_set($date_obj, timezone_open('UTC'));
     $meeting['meeting_date_finish'] = date_format($date_obj, 'Y-m-d H:i');
 
-    
+    // Allow altering of the meeting
+    drupal_alter('os2web_meeting_metadata', $meeting);
+
     // Fix location
     if (empty($meeting['location'])){
       $meeting['location'] = (string) array_shift($xml->xpath("//table[@name='meeting']/fields/field[@name='location']"));
     }
 
-    // Full Doc:
-    $meeting['full_doc'] = array(
-      'uri' => implode('/', array(
-        variable_get('os2web_meetings_path', ACADRE_MM_IMPORT_DIR),
-        $info['filesfolder'],
-        $info['docfilename'])),
-      'title' => $meeting['title'],
-    );
+    // Full Doc
+    // We only import the full doc if the agenda has open access.
+    if (!empty($info['docfilename']) && $info['access'] !== 'Lukket') {
+      $meeting['full_doc'] = array(
+        'uri' => implode('/', array(
+          variable_get('os2web_meetings_path', ACADRE_MM_IMPORT_DIR),
+          $info['filesfolder'],
+          $info['docfilename'])),
+        'title' => $meeting['title'],
+      );
+    }
 
     // Type:
     switch ($info['type']) {
@@ -384,6 +420,9 @@ function _os2web_acadre_esdh_similar_file_exists($filename) {
  * @TODO: Rid this of drupal specific code.
  */
 function _os2web_acadre_esdh_mm_order_addenums($drush = FALSE) {
+  // Clean up of XML files and attachments not needed
+  _os2web_acadre_esdh_mm_clean_up();
+
   if (!lock_acquire(__FUNCTION__)) {
     return;
   }
@@ -499,4 +538,101 @@ function _os2web_acadre_esdh_mm_order_addenums($drush = FALSE) {
   }
   $debug && error_log('MM Import - End of addendums - ' . timer_read('_os2web_acadre_esdh_mm_order_addenums') . 'ms - ' . memory_get_usage());
   lock_release(__FUNCTION__);
+}
+
+/**
+ * Creates a .htaccess file in the Acadre files folder which restricts
+ * access to .XML files.
+ */
+function _os2web_acadre_esdh_mm_ensure_htaccess() {
+  $directory = variable_get('os2web_meetings_path', ACADRE_MM_IMPORT_DIR);
+  if (file_uri_scheme($directory)) {
+    $directory = file_stream_wrapper_uri_normalize($directory);
+  }
+  else {
+    $directory = rtrim($directory, '/\\');
+  }
+  $htaccess_path =  $directory . '/.htaccess';
+
+  if (file_exists($htaccess_path)) {
+    // Short circuit if the .htaccess file already exists.
+    return;
+  }
+
+  // Public .htaccess file.
+  $htaccess_lines = "SetHandler Drupal_Security_Do_Not_Remove_See_SA_2006_006\nOptions None\nOptions +FollowSymLinks\n<FilesMatch \"\.(xml)$\">\nOrder allow,deny\n</FilesMatch>";
+
+  // Write the .htaccess file.
+  if (file_put_contents($htaccess_path, $htaccess_lines)) {
+    drupal_chmod($htaccess_path, 0444);
+  }
+  else {
+    $variables = array('%directory' => $directory, '!htaccess' => '<br />' . nl2br(check_plain($htaccess_lines)));
+    watchdog('security', "Security warning: Couldn't write .htaccess file. Please create a .htaccess file in your %directory directory which contains the following lines: <code>!htaccess</code>", $variables, WATCHDOG_ERROR);
+  }
+}
+
+/**
+ * After import cleaning up the following:
+ *
+ * - Main XML files
+ * - XML files in sub folders
+ * - Attachments in sub folders and not in Drupal file system.
+ */
+function _os2web_acadre_esdh_mm_clean_up() {
+  $processed = variable_get('os2web_acadre_esdh_mm_processed_files_folders', array());
+  if (is_array($processed) && $processed != array()) {
+    // Cleaning up XML files
+    if (defined('MM_KEEP_XML_FILES') && MM_KEEP_XML_FILES === FALSE) {
+      // Removing XML files - both main file and XML files in sub folders.
+      $files = isset($processed['files']) ? $processed['files'] : NULL;
+      if (is_array($files)) {
+        foreach ($files as $file) {
+          $variables = array('%file' => $file);
+          if (file_unmanaged_delete($file)) {
+            watchdog('MM Import', 'Successfully deleted XML %file after import.', $variables, WATCHDOG_INFO);
+          }
+          else {
+            watchdog('MM Import', 'Failed to delete XML %file after import.', $variables, WATCHDOG_ERROR);
+          }
+        }
+      }
+    }
+
+    // Cleaning up attachments in sub folders
+    if (defined('MM_DELETE_FILES_FOR_CLOSED') && MM_DELETE_FILES_FOR_CLOSED === TRUE) {
+      // Removing not used attachment files  from sub folders.
+      $folders = isset($processed['folders']) ? $processed['folders'] : NULL;
+      if (is_array($folders)) {
+        foreach ($folders as $folder) {
+          // Reading all files from the sub folder.
+          if (is_dir($folder) && $handle = opendir($folder)) {
+            while (FALSE !== ($filename = readdir($handle))) {
+              if ($filename != '.' && $filename != '..') {
+                $file = $folder . '/' . $filename;
+
+                // Checking if the file is managed.
+                $fid = db_select('file_managed', 'fm')
+                  ->fields('fm', array('fid'))
+                  ->condition('uri', $file)
+                  ->execute()->fetchField();
+
+                // The file is unmanaged and we remove it.
+                if ($fid === FALSE) {
+                  $variables = array('%file' => $file);
+                  if (file_unmanaged_delete($file)) {
+                    watchdog('MM Import', 'Successfully deleted attachment %file after import.', $variables, WATCHDOG_INFO);
+                  }
+                  else {
+                    watchdog('MM Import', 'Failed to delete attachment %file after import.', $variables, WATCHDOG_ERROR);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  variable_set('os2web_acadre_esdh_mm_processed_files_folders', array());
 }
