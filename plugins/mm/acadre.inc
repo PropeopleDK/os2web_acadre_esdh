@@ -240,7 +240,8 @@ function _os2web_acadre_esdh_import_meeting($info) {
 
     // Full Doc
     // We only import the full doc if the agenda has open access.
-    if (!empty($info['docfilename']) && $info['access'] !== 'Lukket') {
+    $skip_full_doc = (defined('MM_SKIP_FULL_DOC') && MM_SKIP_FULL_DOC) ? TRUE : FALSE;
+    if (!empty($info['docfilename']) && $info['access'] !== 'Lukket' && !$skip_full_doc) {
       $meeting['full_doc'] = array(
         'uri' => implode('/', array(
           variable_get('os2web_meetings_path', ACADRE_MM_IMPORT_DIR),
@@ -342,17 +343,20 @@ function _os2web_acadre_esdh_import_item($info, $xml) {
       }
     }
     // Process enclosures.
-    foreach ($xml->xpath("table[@name='enclosure']") as $enclosure) {
-      $filename_in = (string) array_shift($enclosure->xpath("fields/field[@name='filename']"));
-      if (strlen($filename_in) > 0) {
-        $item['enclosures'][] = array(
-          'uri' => implode('/', array(
-            variable_get('os2web_meetings_path', ACADRE_MM_IMPORT_DIR),
-            $info['filesfolder'],
-            $filename_in)),
-          'title' => trim((string) array_shift($enclosure->xpath("fields/field[@name='name']"))),
-          'access' => ACADRE_MM_ACCESS_OPEN == (int) array_shift($enclosure->xpath("fields/field[@name='access']")),
-        );
+    $skip_enclosures = (defined('MM_SKIP_ENCLOSURES') && MM_SKIP_ENCLOSURES) ? TRUE : FALSE;
+    if (!$skip_enclosures) {
+      foreach ($xml->xpath("table[@name='enclosure']") as $enclosure) {
+        $filename_in = (string) array_shift($enclosure->xpath("fields/field[@name='filename']"));
+        if (strlen($filename_in) > 0) {
+          $item['enclosures'][] = array(
+            'uri' => implode('/', array(
+              variable_get('os2web_meetings_path', ACADRE_MM_IMPORT_DIR),
+              $info['filesfolder'],
+              $filename_in)),
+            'title' => trim((string) array_shift($enclosure->xpath("fields/field[@name='name']"))),
+            'access' => ACADRE_MM_ACCESS_OPEN == (int) array_shift($enclosure->xpath("fields/field[@name='access']")),
+          );
+        }
       }
     }
   } 
