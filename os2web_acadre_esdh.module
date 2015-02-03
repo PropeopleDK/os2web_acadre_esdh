@@ -7,8 +7,11 @@
 
 include_once('os2web_acadre_esdh.features.inc');
 
-define('ACADRE_MM_IMPORT_DIR', 'public://acadre');
+define('ACADRE_MM_IMPORT_DIR', 'acadre://');
 define('ACADRE_MM_DEFAULT_APPROVED', '62,59,64,53,54,56,57,63,58,51,55,61,68,69,42');
+
+// MM settings.
+define('MM_USE_ALTERNATIVE_FILE_URI_SCHEME', TRUE);
 
 /**
  * Implements hook_ctools_plugin_directory().
@@ -149,3 +152,45 @@ function os2web_acadre_esdh_os2web_help($sections) {
 //      return t('Missing documentation.');
 //  }
 //}
+
+/**
+ * Implements hook_stream_wrappers().
+ *
+ * Custom Acadre stream wrapper to avoid problems when moving files.
+ */
+function os2web_acadre_esdh_stream_wrappers() {
+  return array(
+    'acadre' => array(
+      'name' => t('Acadre'),
+      'class' => 'AcadreStreamWrapper',
+      'description' => t('Stream wrapper to the Acadre ESDH integration.'),
+      'type' => STREAM_WRAPPERS_LOCAL_HIDDEN,
+    ),
+  );
+}
+
+/**
+ * Acadre (acadre://) stream wrapper class.
+ *
+ * Provides support for storing Acadre documents with the Drupal file
+ * interface.
+ */
+class AcadreStreamWrapper extends DrupalPublicStreamWrapper {
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getDirectoryPath() {
+    $path = variable_get('os2web_acadre_stream_wrapper_path', 'acadre');
+    $path = $path ? '/' . $path : '';
+    return parent::getDirectoryPath() . $path;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getExternalUrl() {
+    $path = str_replace('\\', '/', $this->getTarget());
+    return $GLOBALS['base_url'] . '/' . self::getDirectoryPath() . '/' . drupal_encode_path($path);
+  }
+}
