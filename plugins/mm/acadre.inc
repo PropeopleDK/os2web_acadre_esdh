@@ -403,6 +403,7 @@ function _os2web_acadre_esdh_mm_order_addenums($drush = FALSE) {
   field_attach_load('node', $nodes, FIELD_LOAD_CURRENT, array('field_id' => $fields['field_os2web_meetings_addendum']['field_id']));
   field_attach_load('node', $nodes, FIELD_LOAD_CURRENT, array('field_id' => $fields['field_os2web_meetings_id']['field_id']));
   field_attach_load('node', $nodes, FIELD_LOAD_CURRENT, array('field_id' => $fields['field_os2web_meetings_sub_id']['field_id']));
+  field_attach_load('node', $nodes, FIELD_LOAD_CURRENT, array('field_id' => $fields['field_os2web_meetings_system_id']['field_id']));
 
   // Meetings as: $meetings[<meeting_id>][<system_id>][<node_id>] .
   $meetings = array();
@@ -418,8 +419,9 @@ function _os2web_acadre_esdh_mm_order_addenums($drush = FALSE) {
     }
     $meeting_id = field_get_items('node', $node, 'field_os2web_meetings_id');
     $meeting_sub_id = field_get_items('node', $node, 'field_os2web_meetings_sub_id');
-    if (!isset($meeting_id[0]['value']) || !isset($meeting_sub_id[0]['value'])) {
-      $debug && error_log('MM Import - Missing meeting_id or meeting_sub_id for nid=' . $node->nid);
+    $meeting_system_id = field_get_items('node', $node, 'field_os2web_meetings_system_id');
+    if (!isset($meeting_id[0]['value']) || !isset($meeting_system_id[0]['value'])) {
+      $debug && error_log('MM Import - Missing meeting_id or meeting_system_id for nid=' . $node->nid);
       continue;
     }
     if (isset($meetings[$meeting_id[0]['value']][$meeting_sub_id[0]['value']])) {
@@ -428,7 +430,7 @@ function _os2web_acadre_esdh_mm_order_addenums($drush = FALSE) {
       node_delete($node->nid);
     }
     else {
-      $meetings[$meeting_id[0]['value']][$meeting_sub_id[0]['value']] = $node->nid;
+      $meetings[$meeting_id[0]['value']][$meeting_system_id[0]['value']] = $node->nid;
     }
   }
 
