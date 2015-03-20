@@ -461,6 +461,8 @@ function _os2web_acadre_esdh_mm_order_addenums($drush = FALSE) {
           // error_log(basename(__FILE__) . ':' . __LINE__ . ' Var: $addenum_to = ' . print_r($addenum_to, 1));
           $node->field_os2web_meetings_addendum[LANGUAGE_NONE][0]['nid'] = $primary->nid;
           node_save($node);
+          $node_to_access = node_load($node->nid);
+          node_access_acquire_grants($node_to_access);
         }
       }
       else {
