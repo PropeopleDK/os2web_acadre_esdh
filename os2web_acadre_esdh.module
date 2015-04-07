@@ -9,6 +9,7 @@ define('ACADRE_MM_IMPORT_DIR', 'acadre://');
 define('ACADRE_MM_DEFAULT_APPROVED', '62,59,64,53,54,56,57,63,58,51,55,61,68,69,42');
 
 // MM settings.
+define('MM_USE_ALTERNATIVE_FILE_URI_SCHEME', TRUE);
 define('MM_BPA_BODY_FORMAT', 'os2web_acadre_esdh');
 define('MM_REPUBLISH_MEETINGS', TRUE);
 define('MM_REPUBLISH_SUBVERSION', TRUE);
