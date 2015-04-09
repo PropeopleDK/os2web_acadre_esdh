@@ -453,6 +453,14 @@ function _os2web_acadre_esdh_mm_order_addenums($drush = FALSE) {
       if ($primary) {
         $addenum_to = field_get_items('node', $node, 'field_os2web_meetings_addendum');
         $addenum_to = is_array($addenum_to) ? array_shift(array_shift($addenum_to)) : FALSE;
+
+        $primaty_type = field_get_items('node', $primary, 'field_os2web_meetings_type');
+        $primaty_type = is_array($primaty_type) ? array_shift(array_shift($primaty_type)) : FALSE;
+
+        // Delete addenum if primary meeting is of type Referat.
+        if ($primaty_type == 'Referat') {
+          node_delete($node->nid);
+        }
         // Save time by only updating what is needed.
         if ($addenum_to != $primary->nid) {
           // error_log(basename(__FILE__) . ':' . __LINE__ . ' Var: $primary = ' . print_r($primary->nid, 1));
